@@ -31,7 +31,7 @@ public class RainierParams {
 
     public static String usage() {
         StringBuilder usage = new StringBuilder();
-        usage.append("Usage: ambien -host <hostname> -f <input file>\n");
+        usage.append("Usage: rainier -host <hostname> -f <input file>\n");
         usage.append("OPTIONS:\n");
         usage.append("  -host <hostname>               Contact point for DSE [required]\n");
         usage.append("  -f <input file>                File of queries to run\n");

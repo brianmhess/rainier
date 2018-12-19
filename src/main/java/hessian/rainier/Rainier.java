@@ -103,52 +103,6 @@ public class Rainier {
             cluster.close();
     }
 
-    private void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row) {
-        if (null == stmts)
-            return;
-        if (stmts.size() < 1)
-            return;
-        PreparedStatement ps = stmts.get(0);
-        String cmd = ps.getQueryString();
-        System.out.println("Running: " + cmd);
-        List<PreparedStatement> sublist = stmts.subList(1, stmts.size());
-        BoundStatement bs = ps.bind();
-        Map<String,String> myargs = new HashMap<>(args);
-        if (null != row) {
-            for (ColumnDefinitions.Definition cdef : row.getColumnDefinitions()) {
-                myargs.put(cdef.getName(), codecRegistry.codecFor(cdef.getType()).format(row.getObject(cdef.getName())));
-            }
-        }
-        System.out.println("With variables: " + myargs);
-        for (ColumnDefinitions.Definition cdef : ps.getVariables()) {
-            if (null == myargs.get(cdef.getName())) {
-                System.err.println("Could not find value for key " + cdef.getName());
-                System.exit(-1);  // TODO: Maybe do something better here?
-            }
-            bs.set(cdef.getName(), codecRegistry.codecFor(cdef.getType()).parse(myargs.get(cdef.getName())), codecRegistry.codecFor(cdef.getType()).getJavaType().getRawType());
-        }
-        List<Row> rows = session.execute(bs).all();
-        for (Row r : rows) {
-            runChain(sublist, myargs, r);
-        }
-    }
-
-    private void runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
-                              long seed, int minRepeat, int maxRepeat) {
-        Random random = new Random(seed);
-        Map<String,String> arguments = new HashMap<>(args);
-        // Generate random arguments
-        for(String k : arglistmap.keySet()) {
-            arguments.put(k, arglistmap.get(k).get(random.nextInt(arglistmap.get(k).size())));
-        }
-
-        int numRepeat = random.nextInt(maxRepeat - minRepeat + 1) + minRepeat;
-        for (int r = 0; r < numRepeat; r++) {
-            // Run chain
-            runChain(preparedStatements, arguments, null);
-        }
-    }
-
     private boolean run(String[] args)
         throws IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException,
                CertificateException, UnrecoverableKeyException {
@@ -180,10 +134,17 @@ public class Rainier {
             arglistmap.put(a, Files.readAllLines(Paths.get(params.argfilemap.get(a))));
         }
 
-        // Run iterations
-        Random random = new Random(0);
-        for (long iter = 0; iter < params.numIterations; iter++) {
-            runIteration(preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat);
+        // Single Threaded
+        if (params.numThreads = 1) {
+            // Run iterations
+            Random random = new Random(0);
+            for (long iter = 0; iter < params.numIterations; iter++) {
+                RainierTaks.runIteration(preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat);
+            }
+        }
+        // Multi-Threaded
+        else {
+            ExecutorService executor = new Executors.
         }
 
         cleanup();

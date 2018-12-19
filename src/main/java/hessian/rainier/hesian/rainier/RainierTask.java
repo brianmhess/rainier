@@ -30,11 +30,10 @@ public class RainierTask implements Callable<Long> {
     }
 
     public Long call() {
-
-        return 1L;
+        return (Long)runIteration(preparedStatements, args, arglistmap, seed, minRepeat, maxRepeat, session, codecRegistry);
     }
 
-    private void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row) {
+    public static void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row, Session session, CodecRegistry codecRegistry) {
         if (null == stmts)
             return;
         if (stmts.size() < 1)
@@ -64,8 +63,8 @@ public class RainierTask implements Callable<Long> {
         }
     }
 
-    private void runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
-                              long seed, int minRepeat, int maxRepeat) {
+    public static int runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
+                              long seed, int minRepeat, int maxRepeat, Session session, CodecRegistry codecRegistry) {
         Random random = new Random(seed);
         Map<String,String> arguments = new HashMap<>(args);
         // Generate random arguments
@@ -76,6 +75,8 @@ public class RainierTask implements Callable<Long> {
         int numRepeat = random.nextInt(maxRepeat - minRepeat + 1) + minRepeat;
         for (int r = 0; r < numRepeat; r++) {
             // Run chain
-            runChain(preparedStatements, arguments, null);
+            runChain(preparedStatements, arguments, null, session, codecRegistry);
         }
-    }}
+        return numRepeat;
+    }
+}

@@ -62,6 +62,13 @@ simply repeat the same chain of queries with the same arguments each time.
 
 We will want to control the number of iterations.  We can do that via `-numIterations`.
 
+### Just a little more
+You can run this with multiple threads.  If you set `-numThreads`, a threadpool with that
+many threads will be created.  Each "task" is one set of parameters (essentially, one random
+seed value).  Each task will run some number of repeats of the chain as specified by `minRepeat`
+and `maxRepeat`.  There will be a total of `numIterations` tasks, but with repeats may have
+more than `numIteration` chains run altogether.
+
 ## Usage
 ``` 
 $ java -jar target/rainier-0.1-SNAPSHOT-jar-with-dependencies.jar <arguments>

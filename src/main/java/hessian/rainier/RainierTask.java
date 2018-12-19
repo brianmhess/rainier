@@ -1,4 +1,4 @@
-package hessian.rainier.hesian.rainier;
+package hessian.rainier;
 
 import com.datastax.driver.core.*;
 
@@ -17,8 +17,11 @@ public class RainierTask implements Callable<Long> {
     private long seed = 0;
     private int minRepeat = 1;
     private int maxRepeat = 1;
+    private long taskNum = 0;
 
-    public RainierTask(Session session, CodecRegistry codecRegistry, List<PreparedStatement> preparedStatements, Map<String, String> arguments, Map<String, List<String>> arglistmap, long seed, int minRepeat, int maxRepeat) {
+    public RainierTask(Session session, CodecRegistry codecRegistry, List<PreparedStatement> preparedStatements,
+                       Map<String, String> arguments, Map<String, List<String>> arglistmap, long seed, int minRepeat,
+                       int maxRepeat, long taskNum) {
         this.session = session;
         this.codecRegistry = codecRegistry;
         this.preparedStatements = preparedStatements;
@@ -27,20 +30,22 @@ public class RainierTask implements Callable<Long> {
         this.seed = seed;
         this.minRepeat = minRepeat;
         this.maxRepeat = maxRepeat;
+        this.taskNum = taskNum;
     }
 
     public Long call() {
-        return (Long)runIteration(preparedStatements, args, arglistmap, seed, minRepeat, maxRepeat, session, codecRegistry);
+        return (long)runIteration(preparedStatements, arguments, arglistmap, seed, minRepeat, maxRepeat, session, codecRegistry, taskNum);
     }
 
-    public static void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row, Session session, CodecRegistry codecRegistry) {
+    public static void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row, Session session,
+                                CodecRegistry codecRegistry, long taskNum) {
         if (null == stmts)
             return;
         if (stmts.size() < 1)
             return;
         PreparedStatement ps = stmts.get(0);
         String cmd = ps.getQueryString();
-        System.out.println("Running: " + cmd);
+        System.out.println(String.format("[%5d] Running: %s", taskNum, cmd));
         List<PreparedStatement> sublist = stmts.subList(1, stmts.size());
         BoundStatement bs = ps.bind();
         Map<String,String> myargs = new HashMap<>(args);
@@ -49,22 +54,22 @@ public class RainierTask implements Callable<Long> {
                 myargs.put(cdef.getName(), codecRegistry.codecFor(cdef.getType()).format(row.getObject(cdef.getName())));
             }
         }
-        System.out.println("With variables: " + myargs);
+        System.out.println(String.format("[%5d] With variables: %s", taskNum, myargs));
         for (ColumnDefinitions.Definition cdef : ps.getVariables()) {
             if (null == myargs.get(cdef.getName())) {
-                System.err.println("Could not find value for key " + cdef.getName());
+                System.err.println(String.format("[%5d] Could not find value for key %s", taskNum, cdef.getName()));
                 System.exit(-1);  // TODO: Maybe do something better here?
             }
             bs.set(cdef.getName(), codecRegistry.codecFor(cdef.getType()).parse(myargs.get(cdef.getName())), codecRegistry.codecFor(cdef.getType()).getJavaType().getRawType());
         }
         List<Row> rows = session.execute(bs).all();
         for (Row r : rows) {
-            runChain(sublist, myargs, r);
+            runChain(sublist, myargs, r, session, codecRegistry, taskNum);
         }
     }
 
     public static int runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
-                              long seed, int minRepeat, int maxRepeat, Session session, CodecRegistry codecRegistry) {
+                              long seed, int minRepeat, int maxRepeat, Session session, CodecRegistry codecRegistry, long taskNum) {
         Random random = new Random(seed);
         Map<String,String> arguments = new HashMap<>(args);
         // Generate random arguments
@@ -75,7 +80,8 @@ public class RainierTask implements Callable<Long> {
         int numRepeat = random.nextInt(maxRepeat - minRepeat + 1) + minRepeat;
         for (int r = 0; r < numRepeat; r++) {
             // Run chain
-            runChain(preparedStatements, arguments, null, session, codecRegistry);
+            System.out.println(String.format("\n[%5d] Iter %d repeat %d", taskNum, seed, r));
+            runChain(preparedStatements, arguments, null, session, codecRegistry, taskNum);
         }
         return numRepeat;
     }

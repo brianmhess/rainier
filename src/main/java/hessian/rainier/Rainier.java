@@ -29,6 +29,7 @@ import java.nio.file.Paths;
 import java.security.*;
 import java.security.cert.CertificateException;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class Rainier {
     private static String version = "0.0.1";
@@ -105,7 +106,7 @@ public class Rainier {
 
     private boolean run(String[] args)
         throws IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException,
-               CertificateException, UnrecoverableKeyException {
+               CertificateException, UnrecoverableKeyException, InterruptedException, ExecutionException {
         // process arguments
         if (!params.parseArgs(args)) {
             System.err.println("Error processing arguments\n" + usage());
@@ -135,16 +136,27 @@ public class Rainier {
         }
 
         // Single Threaded
-        if (params.numThreads = 1) {
+        if (1 == params.numThreads) {
             // Run iterations
             Random random = new Random(0);
             for (long iter = 0; iter < params.numIterations; iter++) {
-                RainierTaks.runIteration(preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat);
+                RainierTask.runIteration( preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat, session, codecRegistry, 0L);
             }
         }
         // Multi-Threaded
         else {
-            ExecutorService executor = new Executors.
+            ExecutorService executor = Executors.newFixedThreadPool(params.numThreads);
+            Set<Future<Long>> results = new HashSet<>();
+            for (long iter = 0; iter < params.numIterations; iter++) {
+                Callable<Long> worker = new RainierTask(session, codecRegistry, preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat, iter);
+                results.add(executor.submit(worker));
+            }
+            executor.shutdown();
+            long total = 0;
+            for (Future<Long> res : results) {
+                total += res.get();
+            }
+            System.out.println("Completed " + params.numIterations + " iterations, for a total of " + total + " total chains");
         }
 
         cleanup();
@@ -154,7 +166,7 @@ public class Rainier {
 
     public static void main(String[] args) 
         throws IOException, KeyStoreException, NoSuchAlgorithmException, UnrecoverableKeyException,
-               CertificateException, KeyManagementException {
+               CertificateException, KeyManagementException, InterruptedException, ExecutionException {
         Rainier rainier = new Rainier();
         boolean success = rainier.run(args);
         if (success) {

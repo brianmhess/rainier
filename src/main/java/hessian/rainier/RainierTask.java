@@ -18,6 +18,7 @@ public class RainierTask implements Callable<Long> {
     private int minRepeat = 1;
     private int maxRepeat = 1;
     private long taskNum = 0;
+    private Random random = null;
 
     public RainierTask(Session session, CodecRegistry codecRegistry, List<PreparedStatement> preparedStatements,
                        Map<String, String> arguments, Map<String, List<String>> arglistmap, long seed, int minRepeat,
@@ -31,13 +32,14 @@ public class RainierTask implements Callable<Long> {
         this.minRepeat = minRepeat;
         this.maxRepeat = maxRepeat;
         this.taskNum = taskNum;
+        random = new Random(this.seed);
     }
 
     public Long call() {
         return (long)runIteration(preparedStatements, arguments, arglistmap, seed, minRepeat, maxRepeat, session, codecRegistry, taskNum);
     }
 
-    public static void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row, Session session,
+    public void runChain(List<PreparedStatement> stmts, Map<String,String> args, Row row, Session session,
                                 CodecRegistry codecRegistry, long taskNum) {
         if (null == stmts)
             return;
@@ -68,9 +70,8 @@ public class RainierTask implements Callable<Long> {
         }
     }
 
-    public static int runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
+    public  int runIteration(List<PreparedStatement> preparedStatements, Map<String,String> args, Map<String,List<String>> arglistmap,
                               long seed, int minRepeat, int maxRepeat, Session session, CodecRegistry codecRegistry, long taskNum) {
-        Random random = new Random(seed);
         Map<String,String> arguments = new HashMap<>(args);
         // Generate random arguments
         for(String k : arglistmap.keySet()) {

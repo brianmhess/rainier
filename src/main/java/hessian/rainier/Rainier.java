@@ -16,7 +16,9 @@
 package hessian.rainier;
 
 import com.datastax.driver.core.*;
+import com.datastax.driver.core.policies.ConstantSpeculativeExecutionPolicy;
 import com.datastax.driver.core.policies.DCAwareRoundRobinPolicy;
+import com.datastax.driver.core.policies.PercentileSpeculativeExecutionPolicy;
 import com.datastax.driver.core.policies.TokenAwarePolicy;
 
 
@@ -71,7 +73,10 @@ public class Rainier {
                         tmf != null ? tmf.getTrustManagers() : null,
                         new SecureRandom());
 
-        return RemoteEndpointAwareJdkSSLOptions.builder().withSSLContext(sslContext).build();
+        RemoteEndpointAwareJdkSSLOptions.Builder sslOptionsBuilder = RemoteEndpointAwareJdkSSLOptions.builder();
+        sslOptionsBuilder.withSSLContext(sslContext);
+        //sslOptionsBuilder.withCipherSuites(new String[]{"TLS_RSA_WITH_AES_128_CBC_SHA"});  // F
+        return sslOptionsBuilder.build();
     }
 
     private void setup()
@@ -80,12 +85,30 @@ public class Rainier {
         // Connect to Cassandra
         Cluster.Builder clusterBuilder = Cluster.builder()
             .addContactPoint(params.host)
-            .withPort(params.port)
-            .withLoadBalancingPolicy(new TokenAwarePolicy( DCAwareRoundRobinPolicy.builder().build()));
+            .withPort(params.port);
         if (null != params.username)
             clusterBuilder = clusterBuilder.withCredentials(params.username, params.password);
         if (null != params.truststorePath)
             clusterBuilder = clusterBuilder.withSSL(createSSLOptions());
+
+        // Speculative Retry Policy
+        //clusterBuilder.withSpeculativeExecutionPolicy(new ConstantSpeculativeExecutionPolicy(500,2)); //F
+        //clusterBuilder.withSpeculativeExecutionPolicy(new PercentileSpeculativeExecutionPolicy(ClusterWidePercentileTracker.builder(6000).build(), 99.0, 2)) //F
+
+        // Socket Options
+        SocketOptions socketOptions = new SocketOptions();
+        //socketOptions.setConnectTimeoutMillis(5000); // F
+        //socketOptions.setReadTimeoutMillis(12000); // F
+        clusterBuilder.withSocketOptions(socketOptions);
+
+        // Load Balancing Policy
+        clusterBuilder.withLoadBalancingPolicy(new TokenAwarePolicy( DCAwareRoundRobinPolicy.builder().build()));
+
+        // Query Options
+        QueryOptions queryOptions = new QueryOptions();
+        //queryOptions.setConsistencyLevel(ConsistencyLevel.LOCAL_QUORUM); // F
+        //queryOptions.setDefaultIdempotence(true); // F
+        clusterBuilder.withQueryOptions(queryOptions);
 
         cluster = clusterBuilder.build();
         if (null == cluster) {
@@ -119,13 +142,15 @@ public class Rainier {
 
         // Read input file
         List<String> cmds = Files.readAllLines(Paths.get(params.inputFname));
-        System.err.println("cmds: ");
-        cmds.forEach(System.err::println);
 
         // Prepare queries
         List<PreparedStatement> preparedStatements = new ArrayList<>(cmds.size());
         // TODO: catch preparing exceptions
+        System.err.println("cmds: ");
         for (int i = 0; i < cmds.size(); i++) {
+            if (cmds.get(i).length() == 0) continue; // skip empty lines
+            if (cmds.get(i).startsWith("#")) continue; // skip lines that start with # (for commenting)
+            System.err.println(cmds.get(i));
             preparedStatements.add(i, session.prepare(cmds.get(i)));
         }
 
@@ -139,8 +164,9 @@ public class Rainier {
         if (1 == params.numThreads) {
             // Run iterations
             Random random = new Random(0);
+            RainierTask rainierTask = new RainierTask(session, codecRegistry, preparedStatements, params.argmap, arglistmap, 0, params.minRepeat, params.maxRepeat, 0);
             for (long iter = 0; iter < params.numIterations; iter++) {
-                RainierTask.runIteration( preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat, session, codecRegistry, 0L);
+                rainierTask.runIteration( preparedStatements, params.argmap, arglistmap, iter, params.minRepeat, params.maxRepeat, session, codecRegistry, 0L);
             }
         }
         // Multi-Threaded
